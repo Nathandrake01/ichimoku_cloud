@@ -6,8 +6,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class TradingConfig(BaseModel):
-    # Long only coins
-    LONG_COINS: List[str] = ["HYPE", "BNB", "SOL", "LINK"]
+    # Long only coins (top 10-15 by market cap/volume)
+    LONG_COINS: List[str] = [
+        "BTC", "ETH", "BNB", "SOL", "XRP", 
+        "ADA", "AVAX", "DOT", "MATIC", "LINK",
+        "UNI", "ATOM", "LTC", "NEAR", "HYPE"
+    ]
 
     # Risk management
     INITIAL_PORTFOLIO_VALUE: float = 10000.0  # USD

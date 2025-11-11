@@ -141,12 +141,16 @@ class TradingStrategy:
 
     async def scan_for_signals(self) -> Dict[str, str]:
         """
-        Scan all eligible symbols for trading signals
+        Scan all eligible symbols for trading signals with priority system
+        
+        Priority:
+        1. Fresh signals (transition from False to True) - Best entries
+        2. Recent signals (appeared in last few hours) - Good entries
+        3. Older signals (if slots need filling) - Acceptable entries
 
         Returns:
             Dictionary of symbol -> signal_type ('long', 'short', or None)
         """
-        signals = {}
         config_data = config.get_config()
 
         # Get long-eligible symbols
@@ -157,12 +161,121 @@ class TradingStrategy:
 
         all_symbols = long_symbols + short_symbols
 
+        # Collect all signals with their "freshness" score
+        signal_candidates = []
+        
         for symbol in all_symbols:
-            signal = await self.check_signal(symbol)
-            if signal:
-                signals[symbol] = signal
+            signal_info = await self.check_signal_with_priority(symbol)
+            if signal_info:
+                signal_candidates.append(signal_info)
+
+        # Sort by priority: fresh signals first, then by recency
+        signal_candidates.sort(key=lambda x: (x['priority'], -x['hours_since_signal']))
+        
+        # Log signal priorities
+        if signal_candidates:
+            print(f"\n📊 Signal Priority Ranking:")
+            for i, candidate in enumerate(signal_candidates[:10], 1):  # Show top 10
+                priority_label = {0: "🆕 FRESH", 1: "⏰ RECENT", 2: "⏳ OLDER"}[candidate['priority']]
+                print(f"  {i}. {candidate['symbol']}: {priority_label} ({candidate['hours_since_signal']}h ago) - {candidate['signal_type'].upper()}")
+        
+        # Convert to simple dict for compatibility
+        signals = {}
+        for candidate in signal_candidates:
+            signals[candidate['symbol']] = candidate['signal_type']
 
         return signals
+
+    async def check_signal_with_priority(self, symbol: str) -> Optional[Dict]:
+        """
+        Check for trading signal with priority scoring
+        
+        Returns dict with:
+        - symbol: str
+        - signal_type: 'long' or 'short'
+        - priority: int (0=fresh, 1=recent, 2=older)
+        - hours_since_signal: float
+        - signal_first_appeared: int (candle index where signal first appeared)
+        """
+        try:
+            # Warm-up period check
+            time_since_startup = (datetime.now() - self.startup_time).total_seconds()
+            if time_since_startup < 3600:
+                return None
+
+            # Get OHLCV data
+            df = await data_provider.get_ohlcv(symbol, timeframe='1h', limit=100)
+
+            if df.empty or len(df) < 52:
+                return None
+
+            # Filter out forming candle
+            last_timestamp = df.index[-1]
+            current_time = datetime.now()
+            
+            if last_timestamp.hour == current_time.hour and last_timestamp.date() == current_time.date():
+                df = df.iloc[:-1]
+            
+            if df.empty or len(df) < 52:
+                return None
+
+            # Calculate Ichimoku indicators
+            df = self.ichimoku.calculate(df)
+            df = self.ichimoku.get_signals(df)
+
+            # Check current signal status
+            current_long = df['long_signal'].iloc[-1]
+            current_short = df['short_signal'].iloc[-1]
+
+            # Determine which signal type to check
+            signal_type = None
+            current_signal = False
+            
+            if current_long and symbol.endswith('/USDT'):
+                base_coin = symbol.replace('/USDT', '')
+                if base_coin in config.get_config().LONG_COINS:
+                    signal_type = 'long'
+                    current_signal = True
+            elif current_short:
+                signal_type = 'short'
+                current_signal = True
+
+            if not current_signal:
+                return None
+
+            # Find when signal first appeared (look back through candles)
+            signal_column = 'long_signal' if signal_type == 'long' else 'short_signal'
+            hours_since_signal = 0
+            
+            # Look back to find where signal first appeared
+            for i in range(len(df) - 1, -1, -1):
+                if df[signal_column].iloc[i]:
+                    hours_since_signal += 1
+                else:
+                    break  # Found where signal first appeared
+
+            # Determine priority
+            # 0 = Fresh (just appeared, 1 hour old)
+            # 1 = Recent (2-4 hours old)
+            # 2 = Older (5+ hours old)
+            if hours_since_signal == 1:
+                priority = 0  # Fresh signal
+            elif hours_since_signal <= 4:
+                priority = 1  # Recent signal
+            else:
+                priority = 2  # Older signal
+
+            return {
+                'symbol': symbol,
+                'signal_type': signal_type,
+                'priority': priority,
+                'hours_since_signal': hours_since_signal,
+                'signal_first_appeared': hours_since_signal
+            }
+
+        except Exception as e:
+            print(f"Error checking signal for {symbol}: {e}")
+            return None
 
     async def check_signal(self, symbol: str) -> Optional[str]:
         """
