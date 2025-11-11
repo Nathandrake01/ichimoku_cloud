@@ -63,7 +63,7 @@ class TradingStrategy:
         # Track startup time for warm-up period
         self.startup_time = datetime.now()
         print(f"🚀 Trading strategy initialized at {self.startup_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("⏳ Warm-up period: 1 hour (no trades until bot observes one complete cycle)")
+        print("⏳ Warm-up period: 5 minutes (allowing priority system to work)")
         self.load_positions()
 
     def load_positions(self):
@@ -198,9 +198,9 @@ class TradingStrategy:
         - signal_first_appeared: int (candle index where signal first appeared)
         """
         try:
-            # Warm-up period check
+            # Warm-up period check (reduced to 5 minutes since we have priority system)
             time_since_startup = (datetime.now() - self.startup_time).total_seconds()
-            if time_since_startup < 3600:
+            if time_since_startup < 300:  # 5 minutes = 300 seconds
                 return None
 
             # Get OHLCV data
@@ -290,13 +290,10 @@ class TradingStrategy:
             'long', 'short', or None
         """
         try:
-            # Warm-up period: Don't trade in first hour after startup
-            # This ensures we have proper historical context
+            # Warm-up period: Don't trade in first 5 minutes after startup
+            # Short period to allow data fetching, priority system handles signal quality
             time_since_startup = (datetime.now() - self.startup_time).total_seconds()
-            if time_since_startup < 3600:  # 1 hour = 3600 seconds
-                minutes_remaining = int((3600 - time_since_startup) / 60)
-                if minutes_remaining % 10 == 0:  # Log every 10 minutes
-                    print(f"⏳ Warm-up period: {minutes_remaining} minutes remaining")
+            if time_since_startup < 300:  # 5 minutes = 300 seconds
                 return None
 
             # Get OHLCV data
