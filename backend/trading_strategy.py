@@ -60,10 +60,8 @@ class TradingStrategy:
         self.positions_file = "positions.json"
         # Track last action timestamp per symbol to prevent duplicate trades on same candle
         self.last_action_timestamp: Dict[str, datetime] = {}
-        # Track startup time for warm-up period
-        self.startup_time = datetime.now()
-        print(f"🚀 Trading strategy initialized at {self.startup_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("⏳ Warm-up period: 5 minutes (allowing priority system to work)")
+        print(f"🚀 Trading strategy initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("✅ Priority-based trading: Ready to enter on fresh signals immediately")
         self.load_positions()
 
     def load_positions(self):
@@ -198,11 +196,6 @@ class TradingStrategy:
         - signal_first_appeared: int (candle index where signal first appeared)
         """
         try:
-            # Warm-up period check (reduced to 5 minutes since we have priority system)
-            time_since_startup = (datetime.now() - self.startup_time).total_seconds()
-            if time_since_startup < 300:  # 5 minutes = 300 seconds
-                return None
-
             # Get OHLCV data
             df = await data_provider.get_ohlcv(symbol, timeframe='1h', limit=100)
 
@@ -290,12 +283,6 @@ class TradingStrategy:
             'long', 'short', or None
         """
         try:
-            # Warm-up period: Don't trade in first 5 minutes after startup
-            # Short period to allow data fetching, priority system handles signal quality
-            time_since_startup = (datetime.now() - self.startup_time).total_seconds()
-            if time_since_startup < 300:  # 5 minutes = 300 seconds
-                return None
-
             # Get OHLCV data
             df = await data_provider.get_ohlcv(symbol, timeframe='1h', limit=100)
 

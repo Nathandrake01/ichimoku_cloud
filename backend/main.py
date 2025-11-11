@@ -272,48 +272,52 @@ async def trading_loop():
     trading_loop_running = True
     
     print("🤖 Trading loop started")
-    print("⏰ Trading on 1-hour candle closes only (aligned to clock hours)")
+    print("📊 Priority-based trading: Entries based on signal freshness, exits on hourly candles")
     
-    # Track last hour we acted on to prevent duplicate actions
-    last_action_hour = None
+    # Track last scan time to avoid too frequent scanning
+    last_scan_time = None
+    scan_interval = 300  # Scan every 5 minutes
     
     while trading_loop_running:
         try:
             current_time = datetime.now()
-            current_hour = current_time.replace(minute=0, second=0, microsecond=0)
             
-            # Only trade at the start of a new hour (when previous hour's candle has closed)
-            # Wait at least 2 minutes into the hour to ensure candle data is available
-            should_trade = (
-                current_time.minute >= 2 and  # At least 2 minutes into the hour
-                current_hour != last_action_hour  # Haven't acted on this hour yet
-            )
+            # Should we scan for entries? (every 5 minutes)
+            time_since_last_scan = None
+            if last_scan_time:
+                time_since_last_scan = (current_time - last_scan_time).total_seconds()
             
-            if should_trade:
-                print(f"\n⏰ [{current_time.strftime('%Y-%m-%d %H:%M:%S')}] New hourly candle closed - Running trading cycle...")
+            should_scan = (last_scan_time is None or time_since_last_scan >= scan_interval)
+            
+            if should_scan:
+                print(f"\n⏰ [{current_time.strftime('%Y-%m-%d %H:%M:%S')}] Running trading cycle...")
                 
-                # Step 1: Check exit conditions for all open positions
-                print("📊 Checking exit conditions for open positions...")
-                closed_count = 0
-                for symbol in list(trading_strategy.portfolio.positions.keys()):
-                    should_exit = await trading_strategy.check_exit_conditions(symbol)
-                    if should_exit:
-                        success = await trading_strategy.close_position(symbol)
-                        if success:
-                            closed_count += 1
-                            print(f"✅ Closed position: {symbol}")
+                # Step 1: Check exit conditions for open positions (only on hourly boundaries)
+                current_hour = current_time.replace(minute=0, second=0, microsecond=0)
+                is_hourly_boundary = current_time.minute >= 2 and current_time.minute <= 7  # 2-7 minutes past the hour
                 
-                if closed_count > 0:
-                    print(f"📉 Closed {closed_count} position(s)")
-                else:
-                    print("✓ No positions to close")
+                if is_hourly_boundary and len(trading_strategy.portfolio.positions) > 0:
+                    print("📊 Checking exit conditions for open positions (hourly check)...")
+                    closed_count = 0
+                    for symbol in list(trading_strategy.portfolio.positions.keys()):
+                        should_exit = await trading_strategy.check_exit_conditions(symbol)
+                        if should_exit:
+                            success = await trading_strategy.close_position(symbol)
+                            if success:
+                                closed_count += 1
+                                print(f"✅ Closed position: {symbol}")
+                    
+                    if closed_count > 0:
+                        print(f"📉 Closed {closed_count} position(s)")
+                    else:
+                        print("✓ No positions to close")
                 
-                # Step 2: Scan for new signals and open positions
+                # Step 2: Scan for new signals and open positions (priority-based, anytime)
                 print("🔍 Scanning for new trading signals...")
                 signals = await trading_strategy.scan_for_signals()
                 
                 if signals:
-                    print(f"📡 Found {len(signals)} signal(s): {signals}")
+                    print(f"📡 Found {len(signals)} signal(s)")
                     
                     opened_count = 0
                     for symbol, signal_type in signals.items():
@@ -333,17 +337,14 @@ async def trading_loop():
                 print(f"💰 Portfolio value: ${trading_strategy.portfolio.total_value:.2f}")
                 print(f"📊 Open positions: {len(trading_strategy.portfolio.positions)}")
                 
-                # Mark this hour as processed
-                last_action_hour = current_hour
-                print(f"✓ Trading cycle complete for hour: {current_hour.strftime('%Y-%m-%d %H:00')}")
+                last_scan_time = current_time
+                print(f"✓ Trading cycle complete. Next scan in {scan_interval/60:.0f} minutes")
             else:
-                # Just update portfolio value without trading
+                # Just update portfolio value
                 await trading_strategy.update_portfolio_value()
-                minutes_until_next = 60 - current_time.minute + 2  # Minutes until 2 minutes past next hour
-                if current_hour == last_action_hour:
-                    print(f"⏳ [{current_time.strftime('%H:%M:%S')}] Waiting for next hour... (~{minutes_until_next} min)")
-                else:
-                    print(f"⏳ [{current_time.strftime('%H:%M:%S')}] Waiting for 2 minutes past the hour...")
+                minutes_until_next = int((scan_interval - time_since_last_scan) / 60)
+                if minutes_until_next > 0:
+                    print(f"⏳ [{current_time.strftime('%H:%M:%S')}] Next scan in ~{minutes_until_next} minutes")
             
             # Check every minute
             await asyncio.sleep(60)
