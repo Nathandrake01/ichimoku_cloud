@@ -1,0 +1,13 @@
+{
+  "name": "ichimoku-trading-dashboard",
+  "version": "1.0.0",
+  "description": "Ichimoku Cloud Trading Bot Dashboard",
+  "main": "index.js",
+  "scripts": {
+    "dev": "python3 -m http.server 3000",
+    "build": "echo 'No build step required'",
+    "start": "python3 -m http.server 3000"
+  },
+  "author": "",
+  "license": "MIT"
+}
