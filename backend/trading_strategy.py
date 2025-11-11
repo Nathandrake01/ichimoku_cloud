@@ -193,16 +193,17 @@ class TradingStrategy:
             df = self.ichimoku.calculate(df)
             df = self.ichimoku.get_signals(df)
 
-            # Check for long signal in recent CLOSED candles (last 3 completed candles)
-            recent_long_signals = df['long_signal'].tail(3).any()
-            if recent_long_signals and symbol.endswith('/USDT'):
+            # Check for long signal in the MOST RECENT completed candle only
+            # We only want to enter if the signal is fresh, not from hours ago
+            latest_long_signal = df['long_signal'].iloc[-1]
+            if latest_long_signal and symbol.endswith('/USDT'):
                 base_coin = symbol.replace('/USDT', '')
                 if base_coin in config.get_config().LONG_COINS:
                     return 'long'
 
-            # Check for short signal in recent CLOSED candles (last 3 completed candles)
-            recent_short_signals = df['short_signal'].tail(3).any()
-            if recent_short_signals:
+            # Check for short signal in the MOST RECENT completed candle only
+            latest_short_signal = df['short_signal'].iloc[-1]
+            if latest_short_signal:
                 return 'short'
 
             return None
