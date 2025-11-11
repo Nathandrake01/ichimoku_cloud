@@ -60,6 +60,10 @@ class TradingStrategy:
         self.positions_file = "positions.json"
         # Track last action timestamp per symbol to prevent duplicate trades on same candle
         self.last_action_timestamp: Dict[str, datetime] = {}
+        # Track startup time for warm-up period
+        self.startup_time = datetime.now()
+        print(f"🚀 Trading strategy initialized at {self.startup_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("⏳ Warm-up period: 1 hour (no trades until bot observes one complete cycle)")
         self.load_positions()
 
     def load_positions(self):
@@ -163,6 +167,8 @@ class TradingStrategy:
     async def check_signal(self, symbol: str) -> Optional[str]:
         """
         Check for trading signal on a specific symbol
+        Only returns a signal if it JUST APPEARED (transition detection)
+        This ensures we catch fresh breakouts, not late moves
 
         Args:
             symbol: Trading pair
@@ -171,6 +177,15 @@ class TradingStrategy:
             'long', 'short', or None
         """
         try:
+            # Warm-up period: Don't trade in first hour after startup
+            # This ensures we have proper historical context
+            time_since_startup = (datetime.now() - self.startup_time).total_seconds()
+            if time_since_startup < 3600:  # 1 hour = 3600 seconds
+                minutes_remaining = int((3600 - time_since_startup) / 60)
+                if minutes_remaining % 10 == 0:  # Log every 10 minutes
+                    print(f"⏳ Warm-up period: {minutes_remaining} minutes remaining")
+                return None
+
             # Get OHLCV data
             df = await data_provider.get_ohlcv(symbol, timeframe='1h', limit=100)
 
@@ -189,21 +204,37 @@ class TradingStrategy:
             if df.empty or len(df) < 52:
                 return None
 
+            # Need at least 2 candles to detect signal transition
+            if len(df) < 2:
+                return None
+
             # Calculate Ichimoku indicators
             df = self.ichimoku.calculate(df)
             df = self.ichimoku.get_signals(df)
 
-            # Check for long signal in the MOST RECENT completed candle only
-            # We only want to enter if the signal is fresh, not from hours ago
-            latest_long_signal = df['long_signal'].iloc[-1]
-            if latest_long_signal and symbol.endswith('/USDT'):
+            # TRANSITION DETECTION: Only enter if signal JUST APPEARED
+            # This catches fresh breakouts and avoids late entries
+            
+            # Check for LONG signal transition (False → True)
+            current_long_signal = df['long_signal'].iloc[-1]
+            previous_long_signal = df['long_signal'].iloc[-2]
+            long_signal_just_appeared = current_long_signal and not previous_long_signal
+            
+            if long_signal_just_appeared and symbol.endswith('/USDT'):
                 base_coin = symbol.replace('/USDT', '')
                 if base_coin in config.get_config().LONG_COINS:
+                    print(f"🆕 Fresh LONG signal detected for {symbol}")
+                    print(f"   Previous candle: signal=False, Current candle: signal=True")
                     return 'long'
 
-            # Check for short signal in the MOST RECENT completed candle only
-            latest_short_signal = df['short_signal'].iloc[-1]
-            if latest_short_signal:
+            # Check for SHORT signal transition (False → True)
+            current_short_signal = df['short_signal'].iloc[-1]
+            previous_short_signal = df['short_signal'].iloc[-2]
+            short_signal_just_appeared = current_short_signal and not previous_short_signal
+            
+            if short_signal_just_appeared:
+                print(f"🆕 Fresh SHORT signal detected for {symbol}")
+                print(f"   Previous candle: signal=False, Current candle: signal=True")
                 return 'short'
 
             return None
