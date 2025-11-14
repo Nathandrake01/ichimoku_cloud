@@ -137,17 +137,14 @@ class TradingStrategy:
         except Exception as e:
             print(f"Error saving positions: {e}")
 
-    async def scan_for_signals(self) -> Dict[str, str]:
+    async def scan_for_signals(self) -> List[Dict]:
         """
-        Scan all eligible symbols for trading signals with priority system
+        Scan all eligible symbols for trading signals with strength ranking
         
-        Priority:
-        1. Fresh signals (transition from False to True) - Best entries
-        2. Recent signals (appeared in last few hours) - Good entries
-        3. Older signals (if slots need filling) - Acceptable entries
-
+        ALL-IN STRATEGY: Returns top signals ranked by strength, regardless of long/short split
+        
         Returns:
-            Dictionary of symbol -> signal_type ('long', 'short', or None)
+            List of signal dictionaries sorted by strength (best first)
         """
         config_data = config.get_config()
 
@@ -157,32 +154,31 @@ class TradingStrategy:
         # Get short-eligible symbols (limit to top 50 for performance)
         short_symbols = await data_provider.get_shortable_symbols(limit=50)
 
-        all_symbols = long_symbols + short_symbols
+        all_symbols = list(set(long_symbols + short_symbols))  # Remove duplicates
 
-        # Collect all signals with their "freshness" score
+        # Collect all signals with their strength scores
         signal_candidates = []
         
         for symbol in all_symbols:
             signal_info = await self.check_signal_with_priority(symbol)
             if signal_info:
+                # Calculate strength score (lower is better)
+                # Priority 0 (fresh) = 0-99, Priority 1 (recent) = 100-199, Priority 2 (older) = 200+
+                strength_score = (signal_info['priority'] * 100) + signal_info['hours_since_signal']
+                signal_info['strength_score'] = strength_score
                 signal_candidates.append(signal_info)
 
-        # Sort by priority: fresh signals first, then by recency
-        signal_candidates.sort(key=lambda x: (x['priority'], -x['hours_since_signal']))
+        # Sort by strength: lower score = stronger signal
+        signal_candidates.sort(key=lambda x: x['strength_score'])
         
-        # Log signal priorities
+        # Log top signals
         if signal_candidates:
-            print(f"\n📊 Signal Priority Ranking:")
-            for i, candidate in enumerate(signal_candidates[:10], 1):  # Show top 10
+            print(f"\n📊 Top Signals by Strength (ALL-IN Strategy):")
+            for i, candidate in enumerate(signal_candidates[:15], 1):  # Show top 15
                 priority_label = {0: "🆕 FRESH", 1: "⏰ RECENT", 2: "⏳ OLDER"}[candidate['priority']]
-                print(f"  {i}. {candidate['symbol']}: {priority_label} ({candidate['hours_since_signal']}h ago) - {candidate['signal_type'].upper()}")
+                print(f"  {i}. {candidate['symbol']}: {priority_label} ({candidate['hours_since_signal']}h ago) - {candidate['signal_type'].upper()} [Score: {candidate['strength_score']:.1f}]")
         
-        # Convert to simple dict for compatibility
-        signals = {}
-        for candidate in signal_candidates:
-            signals[candidate['symbol']] = candidate['signal_type']
-
-        return signals
+        return signal_candidates
 
     async def check_signal_with_priority(self, symbol: str) -> Optional[Dict]:
         """
@@ -342,12 +338,13 @@ class TradingStrategy:
 
     def calculate_position_size(self, symbol: str, signal_type: str, entry_price: float) -> Tuple[float, float]:
         """
-        Calculate position size based on fixed allocation per position
-
-        Logic:
-        - Split capital 50/50 between long and short
-        - Long: $50 total ÷ 4 positions = $12.5 per position × 2x leverage = $25
-        - Short: $50 total ÷ 4 positions = $12.5 per position × 1x leverage = $12.5
+        Calculate position size based on fixed $1000 per position
+        
+        ALL-IN STRATEGY:
+        - Fixed $1000 per position (no long/short split)
+        - Apply leverage based on signal type
+        - Long: $1000 × LONG_LEVERAGE
+        - Short: $1000 × SHORT_LEVERAGE
 
         Args:
             symbol: Trading pair
@@ -359,20 +356,16 @@ class TradingStrategy:
         """
         config_data = config.get_config()
 
-        # Split capital 50/50 between long and short
-        long_allocation = self.portfolio.available_cash * 0.5
-        short_allocation = self.portfolio.available_cash * 0.5
+        # Fixed position size
+        position_amount = config_data.POSITION_SIZE  # $1000
 
+        # Get leverage based on signal type
         if signal_type == 'long':
             leverage = config_data.LONG_LEVERAGE
-            # Long: $50 total ÷ 4 positions = $12.5 per position
-            position_amount = long_allocation / config_data.MAX_LONG_POSITIONS
         else:
             leverage = config_data.SHORT_LEVERAGE
-            # Short: $50 total ÷ 4 positions = $12.5 per position
-            position_amount = short_allocation / config_data.MAX_SHORT_POSITIONS
 
-        # Calculate quantity based on position amount and leverage
+        # Calculate quantity: (position_amount × leverage) / entry_price
         quantity = (position_amount * leverage) / entry_price
 
         return quantity, leverage
@@ -407,18 +400,12 @@ class TradingStrategy:
         except:
             pass  # If we can't check, proceed anyway
 
-        # Check position limits
+        # Check position limits - ALL-IN STRATEGY (total positions only)
         config_data = config.get_config()
-        current_long_positions = sum(1 for pos in self.portfolio.positions.values()
-                                   if pos.position_type == PositionType.LONG)
-        current_short_positions = sum(1 for pos in self.portfolio.positions.values()
-                                    if pos.position_type == PositionType.SHORT)
+        total_positions = len(self.portfolio.positions)
 
-        if signal_type == 'long' and current_long_positions >= config_data.MAX_LONG_POSITIONS:
-            return False  # Already at max long positions
-
-        if signal_type == 'short' and current_short_positions >= config_data.MAX_SHORT_POSITIONS:
-            return False  # Already at max short positions
+        if total_positions >= config_data.MAX_TOTAL_POSITIONS:
+            return False  # Already at max total positions
 
         try:
             entry_price = await data_provider.get_current_price(symbol)

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Ichimoku Cloud Trading Bot Startup Script
+# Ichimoku Cloud Trading Bot - ALL-IN Strategy Startup Script
 
-echo "Starting Ichimoku Cloud Trading Bot..."
+echo "Starting Ichimoku Cloud Trading Bot - ALL-IN Strategy..."
 
 # Set environment variables
 export NVM_DIR="$HOME/.nvm"
@@ -34,11 +34,11 @@ check_port() {
 }
 
 # Check if ports are available
-check_port 8000
-check_port 3000
+check_port 8001
+check_port 3001
 
 # Start backend in background
-echo "Starting backend API server on port 8000..."
+echo "Starting backend API server on port 8001..."
 cd backend
 python3 main.py &
 BACKEND_PID=$!
@@ -47,9 +47,9 @@ BACKEND_PID=$!
 sleep 3
 
 # Start frontend in background
-echo "Starting frontend server on port 3000..."
+echo "Starting frontend server on port 3001..."
 cd ../frontend
-python3 -m http.server --bind 0.0.0.0 3000 &
+python3 -m http.server --bind 0.0.0.0 3001 &
 FRONTEND_PID=$!
 
 # Get server IPs
@@ -58,22 +58,22 @@ PRIVATE_IP=$(echo $IP_INFO | cut -d'|' -f1)
 PUBLIC_IP=$(echo $IP_INFO | cut -d'|' -f2)
 
 echo ""
-echo "🚀 Ichimoku Cloud Trading Bot is running!"
+echo "🚀 Ichimoku Cloud Trading Bot - ALL-IN Strategy is running!"
 echo ""
 echo "📊 Frontend Dashboard:"
-echo "   Local:     http://localhost:3000"
-echo "   Private:   http://$PRIVATE_IP:3000"
-echo "   Public:    http://$PUBLIC_IP:3000"
+echo "   Local:     http://localhost:3001"
+echo "   Private:   http://$PRIVATE_IP:3001"
+echo "   Public:    http://$PUBLIC_IP:3001"
 echo ""
 echo "🔧 Backend API:"
-echo "   Local:     http://localhost:8000"
-echo "   Private:   http://$PRIVATE_IP:8000"
-echo "   Public:    http://$PUBLIC_IP:8000"
+echo "   Local:     http://localhost:8001"
+echo "   Private:   http://$PRIVATE_IP:8001"
+echo "   Public:    http://$PUBLIC_IP:8001"
 echo ""
 echo "📚 API Documentation:"
-echo "   Local:     http://localhost:8000/docs"
-echo "   Private:   http://$PRIVATE_IP:8000/docs"
-echo "   Public:    http://$PUBLIC_IP:8000/docs"
+echo "   Local:     http://localhost:8001/docs"
+echo "   Private:   http://$PRIVATE_IP:8001/docs"
+echo "   Public:    http://$PUBLIC_IP:8001/docs"
 echo ""
 echo "⚠️  SECURITY WARNING: The bot is now accessible externally!"
 echo "   Make sure to secure your server and consider using HTTPS."

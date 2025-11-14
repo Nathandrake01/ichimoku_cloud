@@ -17,17 +17,16 @@ class TradingConfig(BaseModel):
     INITIAL_PORTFOLIO_VALUE: float = 10000.0  # USD
     CURRENT_PORTFOLIO_VALUE: float = 10000.0  # USD (can be reduced for risk management)
 
-    # Position limits
-    MAX_LONG_POSITIONS: int = 4  # Maximum 4 long positions
-    MAX_SHORT_POSITIONS: int = 4  # Maximum 4 short positions
+    # Position limits - ALL-IN STRATEGY
+    MAX_TOTAL_POSITIONS: int = 10  # Maximum 10 positions total (can be all long, all short, or mix)
+    POSITION_SIZE: float = 1000.0  # Fixed $1000 per position
 
     # Leverage settings
-    LONG_LEVERAGE: float = 1.0
-    SHORT_LEVERAGE: float = 1.0
+    LONG_LEVERAGE: float = 1.0  # Can be increased for long bias
+    SHORT_LEVERAGE: float = 1.0  # Can be increased for short bias
 
-    # Position allocation
-    LONG_ALLOCATION: float = 0.5  # 50% of capital for longs
-    SHORT_ALLOCATION: float = 0.5  # 50% of capital for shorts
+    # Position allocation - ALL-IN STRATEGY (no 50/50 split)
+    # Positions allocated based on signal strength ranking across all symbols
 
     # Ichimoku settings
     TENKAN_PERIOD: int = 9
@@ -72,6 +71,14 @@ class Config:
             print(f"Long leverage updated to {leverage}x")
         else:
             raise ValueError("Long leverage must be between 1.0 and 10.0")
+    
+    def update_short_leverage(self, leverage: float):
+        """Update short leverage"""
+        if 1.0 <= leverage <= 10.0:  # Reasonable limits
+            self._config.SHORT_LEVERAGE = leverage
+            print(f"Short leverage updated to {leverage}x")
+        else:
+            raise ValueError("Short leverage must be between 1.0 and 10.0")
 
 # Global config instance
 config = Config()

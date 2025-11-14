@@ -15,7 +15,7 @@ from trading_strategy import trading_strategy
 from data_provider import data_provider
 from equity_tracker import equity_tracker
 
-app = FastAPI(title="Ichimoku Cloud Trading Bot", version="1.0.0")
+app = FastAPI(title="Ichimoku Cloud Trading Bot - ALL-IN Strategy", version="2.0.0")
 
 # Global flag to control the trading loop
 trading_loop_running = False
@@ -33,6 +33,7 @@ app.add_middleware(
 class ConfigUpdate(BaseModel):
     portfolio_value: Optional[float] = None
     long_leverage: Optional[float] = None
+    short_leverage: Optional[float] = None
 
 class TradeSignal(BaseModel):
     symbol: str
@@ -55,28 +56,32 @@ async def get_positions():
 
 @app.get("/api/config")
 async def get_config():
-    """Get current configuration"""
+    """Get current configuration - ALL-IN STRATEGY"""
     config_data = config.get_config()
     return {
+        "strategy": "ALL-IN",
         "long_coins": config_data.LONG_COINS,
         "initial_portfolio_value": config_data.INITIAL_PORTFOLIO_VALUE,
         "current_portfolio_value": config_data.CURRENT_PORTFOLIO_VALUE,
         "long_leverage": config_data.LONG_LEVERAGE,
         "short_leverage": config_data.SHORT_LEVERAGE,
-        "max_long_positions": config_data.MAX_LONG_POSITIONS,
-        "max_short_positions": config_data.MAX_SHORT_POSITIONS,
+        "max_total_positions": config_data.MAX_TOTAL_POSITIONS,
+        "position_size": config_data.POSITION_SIZE,
         "paper_trading": config_data.PAPER_TRADING
     }
 
 @app.put("/api/config")
 async def update_config(config_update: ConfigUpdate):
-    """Update configuration"""
+    """Update configuration - ALL-IN STRATEGY"""
     try:
         if config_update.portfolio_value is not None:
             config.update_portfolio_value(config_update.portfolio_value)
 
         if config_update.long_leverage is not None:
             config.update_long_leverage(config_update.long_leverage)
+        
+        if config_update.short_leverage is not None:
+            config.update_short_leverage(config_update.short_leverage)
 
         return {"message": "Configuration updated successfully"}
     except ValueError as e:
@@ -163,19 +168,30 @@ async def get_chart_data(symbol: str, timeframe: str = "1h", limit: int = 100):
 
 @app.post("/api/scan-and-trade")
 async def scan_and_trade(background_tasks: BackgroundTasks):
-    """Scan for signals and execute trades automatically"""
-    signals = await trading_strategy.scan_for_signals()
+    """Scan for signals and execute trades automatically - ALL-IN STRATEGY"""
+    signal_candidates = await trading_strategy.scan_for_signals()
 
     executed_trades = []
-    for symbol, signal_type in signals.items():
+    # Take top signals up to MAX_TOTAL_POSITIONS
+    config_data = config.get_config()
+    available_slots = config_data.MAX_TOTAL_POSITIONS - len(trading_strategy.portfolio.positions)
+    
+    for candidate in signal_candidates[:available_slots]:
+        symbol = candidate['symbol']
+        signal_type = candidate['signal_type']
+        
         # Check if we already have a position in this symbol
         if symbol not in trading_strategy.portfolio.positions:
             success = await trading_strategy.open_position(symbol, signal_type)
             if success:
-                executed_trades.append({"symbol": symbol, "type": signal_type})
+                executed_trades.append({
+                    "symbol": symbol, 
+                    "type": signal_type,
+                    "strength_score": candidate['strength_score']
+                })
 
     return {
-        "signals_found": len(signals),
+        "signals_found": len(signal_candidates),
         "trades_executed": executed_trades,
         "count": len(executed_trades)
     }
@@ -325,23 +341,34 @@ async def trading_loop():
                 elif len(trading_strategy.portfolio.positions) > 0 and not is_new_hourly_candle:
                     print(f"⏳ Holding {len(trading_strategy.portfolio.positions)} position(s) - Next exit check at {(current_hour + timedelta(hours=1)).strftime('%H:%M')}")
                 
-                # Step 2: Scan for new signals and open positions (priority-based, anytime)
-                print("🔍 Scanning for new trading signals...")
-                signals = await trading_strategy.scan_for_signals()
+                # Step 2: Scan for new signals and open positions (ALL-IN strategy - strength-based)
+                print("🔍 Scanning for new trading signals (ALL-IN Strategy)...")
+                signal_candidates = await trading_strategy.scan_for_signals()
                 
-                if signals:
-                    print(f"📡 Found {len(signals)} signal(s)")
+                if signal_candidates:
+                    print(f"📡 Found {len(signal_candidates)} signal(s)")
+                    
+                    # Calculate available slots
+                    config_data = config.get_config()
+                    available_slots = config_data.MAX_TOTAL_POSITIONS - len(trading_strategy.portfolio.positions)
                     
                     opened_count = 0
-                    for symbol, signal_type in signals.items():
+                    for candidate in signal_candidates[:available_slots]:
+                        symbol = candidate['symbol']
+                        signal_type = candidate['signal_type']
+                        
                         if symbol not in trading_strategy.portfolio.positions:
                             success = await trading_strategy.open_position(symbol, signal_type)
                             if success:
                                 opened_count += 1
-                                print(f"✅ Opened {signal_type} position: {symbol}")
+                                print(f"✅ Opened {signal_type} position: {symbol} [Strength: {candidate['strength_score']:.1f}]")
                     
                     if opened_count > 0:
                         print(f"📈 Opened {opened_count} new position(s)")
+                    elif available_slots == 0:
+                        print(f"✓ All {config_data.MAX_TOTAL_POSITIONS} position slots filled")
+                    else:
+                        print("✓ No new positions opened")
                 else:
                     print("✓ No new signals found")
                 
@@ -409,4 +436,4 @@ async def stop_trading():
     return {"message": "Trading loop not running"}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
