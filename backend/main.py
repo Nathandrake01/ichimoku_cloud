@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 import asyncio
 import uvicorn
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import io
 import csv
@@ -272,11 +272,14 @@ async def trading_loop():
     trading_loop_running = True
     
     print("🤖 Trading loop started")
-    print("📊 Priority-based trading: Entries based on signal freshness, exits on hourly candles")
+    print("📊 Clock-based trading: Entries every 5min, exits on hourly candle close (00:00, 01:00, 02:00...)")
     
     # Track last scan time to avoid too frequent scanning
     last_scan_time = None
     scan_interval = 300  # Scan every 5 minutes
+    
+    # Track last hourly candle we checked for exits (clock-based)
+    last_exit_check_hour = None
     
     while trading_loop_running:
         try:
@@ -289,15 +292,20 @@ async def trading_loop():
             
             should_scan = (last_scan_time is None or time_since_last_scan >= scan_interval)
             
+            # Check if a new hourly candle has completed (clock-based: 00:00, 01:00, 02:00, etc.)
+            # We check a few minutes after the hour to ensure the candle is fully formed and available
+            current_hour = current_time.replace(minute=0, second=0, microsecond=0)
+            is_new_hourly_candle = (
+                last_exit_check_hour is None or 
+                (current_hour > last_exit_check_hour and current_time.minute >= 2)
+            )
+            
             if should_scan:
                 print(f"\n⏰ [{current_time.strftime('%Y-%m-%d %H:%M:%S')}] Running trading cycle...")
                 
-                # Step 1: Check exit conditions for open positions (only on hourly boundaries)
-                current_hour = current_time.replace(minute=0, second=0, microsecond=0)
-                is_hourly_boundary = current_time.minute >= 2 and current_time.minute <= 7  # 2-7 minutes past the hour
-                
-                if is_hourly_boundary and len(trading_strategy.portfolio.positions) > 0:
-                    print("📊 Checking exit conditions for open positions (hourly check)...")
+                # Step 1: Check exit conditions ONLY when a new hourly candle has completed
+                if is_new_hourly_candle and len(trading_strategy.portfolio.positions) > 0:
+                    print(f"📊 New hourly candle completed at {current_hour.strftime('%H:%M')} - Checking exit conditions...")
                     closed_count = 0
                     for symbol in list(trading_strategy.portfolio.positions.keys()):
                         should_exit = await trading_strategy.check_exit_conditions(symbol)
@@ -311,6 +319,11 @@ async def trading_loop():
                         print(f"📉 Closed {closed_count} position(s)")
                     else:
                         print("✓ No positions to close")
+                    
+                    # Update the last exit check hour
+                    last_exit_check_hour = current_hour
+                elif len(trading_strategy.portfolio.positions) > 0 and not is_new_hourly_candle:
+                    print(f"⏳ Holding {len(trading_strategy.portfolio.positions)} position(s) - Next exit check at {(current_hour + timedelta(hours=1)).strftime('%H:%M')}")
                 
                 # Step 2: Scan for new signals and open positions (priority-based, anytime)
                 print("🔍 Scanning for new trading signals...")

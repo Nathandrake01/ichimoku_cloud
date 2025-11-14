@@ -22,7 +22,7 @@ class TradingConfig(BaseModel):
     MAX_SHORT_POSITIONS: int = 4  # Maximum 4 short positions
 
     # Leverage settings
-    LONG_LEVERAGE: float = 2.0
+    LONG_LEVERAGE: float = 1.0
     SHORT_LEVERAGE: float = 1.0
 
     # Position allocation

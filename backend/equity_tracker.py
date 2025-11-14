@@ -28,7 +28,12 @@ class EquityTracker:
             print(f"Error saving equity history: {e}")
 
     def add_snapshot(self, total_value: float, realized_pnl: float, unrealized_pnl: float, 
-                     open_positions: int, drawdown: float):
+                     open_positions: int, drawdown: float,
+                     long_pnl: float = 0.0, short_pnl: float = 0.0,
+                     long_realized_pnl: float = 0.0, short_realized_pnl: float = 0.0,
+                     long_unrealized_pnl: float = 0.0, short_unrealized_pnl: float = 0.0,
+                     long_drawdown: float = 0.0, short_drawdown: float = 0.0,
+                     long_positions: int = 0, short_positions: int = 0):
         """Add a new equity snapshot"""
         snapshot = {
             'timestamp': datetime.now().isoformat(),
@@ -37,7 +42,19 @@ class EquityTracker:
             'unrealized_pnl': round(unrealized_pnl, 2),
             'total_pnl': round(realized_pnl + unrealized_pnl, 2),
             'open_positions': open_positions,
-            'drawdown': round(drawdown, 2)
+            'drawdown': round(drawdown, 2),
+            # Long position metrics
+            'long_pnl': round(long_pnl, 2),
+            'long_realized_pnl': round(long_realized_pnl, 2),
+            'long_unrealized_pnl': round(long_unrealized_pnl, 2),
+            'long_drawdown': round(long_drawdown, 2),
+            'long_positions': long_positions,
+            # Short position metrics
+            'short_pnl': round(short_pnl, 2),
+            'short_realized_pnl': round(short_realized_pnl, 2),
+            'short_unrealized_pnl': round(short_unrealized_pnl, 2),
+            'short_drawdown': round(short_drawdown, 2),
+            'short_positions': short_positions
         }
         
         self.equity_history.append(snapshot)

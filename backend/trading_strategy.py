@@ -598,19 +598,49 @@ class TradingStrategy:
         """Get portfolio summary for API"""
         await self.update_portfolio_value()
 
-        # Calculate realized and unrealized P&L
+        # Calculate realized and unrealized P&L (total and by position type)
         unrealized_pnl = 0.0
+        long_unrealized_pnl = 0.0
+        short_unrealized_pnl = 0.0
+        long_positions_count = 0
+        short_positions_count = 0
+        
         for symbol, position in self.portfolio.positions.items():
             try:
                 current_price = await data_provider.get_current_price(symbol)
                 if position.position_type == PositionType.LONG:
                     price_diff = current_price - position.entry_price
-                    unrealized_pnl += price_diff * position.quantity
+                    pnl = price_diff * position.quantity
+                    unrealized_pnl += pnl
+                    long_unrealized_pnl += pnl
+                    long_positions_count += 1
                 else:
                     price_diff = position.entry_price - current_price
-                    unrealized_pnl += price_diff * position.quantity
+                    pnl = price_diff * position.quantity
+                    unrealized_pnl += pnl
+                    short_unrealized_pnl += pnl
+                    short_positions_count += 1
             except:
                 continue
+
+        # Calculate realized P&L by position type
+        long_realized_pnl = sum(trade.pnl for trade in self.trades_history if trade.position_type == PositionType.LONG)
+        short_realized_pnl = sum(trade.pnl for trade in self.trades_history if trade.position_type == PositionType.SHORT)
+        
+        # Calculate total P&L by position type
+        long_total_pnl = long_realized_pnl + long_unrealized_pnl
+        short_total_pnl = short_realized_pnl + short_unrealized_pnl
+        
+        # Calculate drawdown by position type (simplified - based on P&L)
+        initial_value = config.get_config().INITIAL_PORTFOLIO_VALUE
+        long_peak = initial_value / 2 + max(0, long_total_pnl)  # Assume half portfolio allocated to long
+        short_peak = initial_value / 2 + max(0, short_total_pnl)  # Assume half portfolio allocated to short
+        
+        long_current = initial_value / 2 + long_total_pnl
+        short_current = initial_value / 2 + short_total_pnl
+        
+        long_drawdown = ((long_peak - long_current) / long_peak * 100) if long_peak > 0 else 0.0
+        short_drawdown = ((short_peak - short_current) / short_peak * 100) if short_peak > 0 else 0.0
 
         # Add snapshot to equity tracker
         equity_tracker.add_snapshot(
@@ -618,7 +648,17 @@ class TradingStrategy:
             realized_pnl=self.portfolio.total_pnl,
             unrealized_pnl=unrealized_pnl,
             open_positions=len(self.portfolio.positions),
-            drawdown=self.portfolio.drawdown
+            drawdown=self.portfolio.drawdown,
+            long_pnl=long_total_pnl,
+            short_pnl=short_total_pnl,
+            long_realized_pnl=long_realized_pnl,
+            short_realized_pnl=short_realized_pnl,
+            long_unrealized_pnl=long_unrealized_pnl,
+            short_unrealized_pnl=short_unrealized_pnl,
+            long_drawdown=long_drawdown,
+            short_drawdown=short_drawdown,
+            long_positions=long_positions_count,
+            short_positions=short_positions_count
         )
 
         return {
@@ -631,7 +671,21 @@ class TradingStrategy:
             'peak_value': round(self.portfolio.peak_value, 2),
             'drawdown': round(self.portfolio.drawdown, 2),
             'open_positions': len(self.portfolio.positions),
-            'total_trades': len(self.trades_history)
+            'total_trades': len(self.trades_history),
+            # Long position metrics
+            'long_pnl': round(long_total_pnl, 2),
+            'long_realized_pnl': round(long_realized_pnl, 2),
+            'long_unrealized_pnl': round(long_unrealized_pnl, 2),
+            'long_drawdown': round(long_drawdown, 2),
+            'long_positions': long_positions_count,
+            'long_pnl_percentage': round((long_total_pnl / (initial_value / 2)) * 100, 2) if initial_value > 0 else 0.0,
+            # Short position metrics
+            'short_pnl': round(short_total_pnl, 2),
+            'short_realized_pnl': round(short_realized_pnl, 2),
+            'short_unrealized_pnl': round(short_unrealized_pnl, 2),
+            'short_drawdown': round(short_drawdown, 2),
+            'short_positions': short_positions_count,
+            'short_pnl_percentage': round((short_total_pnl / (initial_value / 2)) * 100, 2) if initial_value > 0 else 0.0
         }
 
     async def get_positions(self) -> List[Dict]:

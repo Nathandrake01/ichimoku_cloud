@@ -346,17 +346,66 @@
             </div>
         </div>
 
+        <div class="stats-grid" style="margin-top: 10px;">
+            <div class="stat-card" style="border-left: 3px solid #00ba7c;">
+                <div class="stat-value positive" id="long-pnl">$0.00</div>
+                <div class="stat-label">Long Positions P&L</div>
+                <div style="font-size: 0.75rem; margin-top: 5px; color: #71767b;">
+                    <span id="long-realized-pnl">Realized: $0.00</span> | <span id="long-unrealized-pnl">Unrealized: $0.00</span>
+                </div>
+            </div>
+            <div class="stat-card" style="border-left: 3px solid #00ba7c;">
+                <div class="stat-value" id="long-pnl-percentage">0.00%</div>
+                <div class="stat-label">Long P&L %</div>
+            </div>
+            <div class="stat-card" style="border-left: 3px solid #00ba7c;">
+                <div class="stat-value" id="long-drawdown">0.00%</div>
+                <div class="stat-label">Long Drawdown</div>
+            </div>
+            <div class="stat-card" style="border-left: 3px solid #f4212e;">
+                <div class="stat-value negative" id="short-pnl">$0.00</div>
+                <div class="stat-label">Short Positions P&L</div>
+                <div style="font-size: 0.75rem; margin-top: 5px; color: #71767b;">
+                    <span id="short-realized-pnl">Realized: $0.00</span> | <span id="short-unrealized-pnl">Unrealized: $0.00</span>
+                </div>
+            </div>
+            <div class="stat-card" style="border-left: 3px solid #f4212e;">
+                <div class="stat-value" id="short-pnl-percentage">0.00%</div>
+                <div class="stat-label">Short P&L %</div>
+            </div>
+            <div class="stat-card" style="border-left: 3px solid #f4212e;">
+                <div class="stat-value" id="short-drawdown">0.00%</div>
+                <div class="stat-label">Short Drawdown</div>
+            </div>
+        </div>
+
         <div class="content-grid">
             <div class="main-content">
                 <div class="card-title">
                     <i class="fas fa-chart-area"></i>
-                    Equity Curve
+                    Total Equity Curve
                 </div>
                 <div class="chart-container">
                     <canvas id="equityChart"></canvas>
                 </div>
 
-                <div class="card-title">
+                <div class="card-title" style="margin-top: 30px;">
+                    <i class="fas fa-chart-line"></i>
+                    <span style="color: #00ba7c;">Long Positions Equity Curve</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="longEquityChart"></canvas>
+                </div>
+
+                <div class="card-title" style="margin-top: 30px;">
+                    <i class="fas fa-chart-line"></i>
+                    <span style="color: #f4212e;">Short Positions Equity Curve</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="shortEquityChart"></canvas>
+                </div>
+
+                <div class="card-title" style="margin-top: 30px;">
                     <i class="fas fa-briefcase"></i>
                     Open Positions
                 </div>
@@ -426,27 +475,28 @@
     <script>
         const API_BASE = window.location.protocol + '//' + window.location.hostname + ':8000/api';
         let equityChart = null;
+        let longEquityChart = null;
+        let shortEquityChart = null;
 
         // Initialize the dashboard
         document.addEventListener('DOMContentLoaded', function() {
-            initializeChart();
+            initializeCharts();
             refreshData();
             loadConfig();
             // Auto-refresh every 30 seconds
             setInterval(refreshData, 30000);
         });
 
-        function initializeChart() {
-            const ctx = document.getElementById('equityChart').getContext('2d');
-            equityChart = new Chart(ctx, {
+        function createChartConfig(chartColor, labelPrefix = 'Value') {
+            return {
                 type: 'line',
                 data: {
                     labels: [],
                     datasets: [{
-                        label: 'Portfolio Value',
+                        label: labelPrefix,
                         data: [],
-                        borderColor: '#1d9bf0',
-                        backgroundColor: 'rgba(29, 155, 240, 0.1)',
+                        borderColor: chartColor,
+                        backgroundColor: chartColor.replace(')', ', 0.1)').replace('rgb', 'rgba'),
                         borderWidth: 2,
                         fill: true,
                         tension: 0.4,
@@ -471,7 +521,7 @@
                             borderWidth: 1,
                             callbacks: {
                                 label: function(context) {
-                                    return 'Value: $' + context.parsed.y.toFixed(2);
+                                    return labelPrefix + ': $' + context.parsed.y.toFixed(2);
                                 }
                             }
                         }
@@ -484,7 +534,10 @@
                             },
                             ticks: {
                                 color: '#71767b',
-                                maxTicksLimit: 8
+                                maxTicksLimit: 12,
+                                autoSkip: true,
+                                maxRotation: 45,
+                                minRotation: 45
                             }
                         },
                         y: {
@@ -506,7 +559,18 @@
                         intersect: false
                     }
                 }
-            });
+            };
+        }
+
+        function initializeCharts() {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            equityChart = new Chart(ctx, createChartConfig('#1d9bf0', 'Portfolio Value'));
+
+            const longCtx = document.getElementById('longEquityChart').getContext('2d');
+            longEquityChart = new Chart(longCtx, createChartConfig('#00ba7c', 'Long P&L'));
+
+            const shortCtx = document.getElementById('shortEquityChart').getContext('2d');
+            shortEquityChart = new Chart(shortCtx, createChartConfig('#f4212e', 'Short P&L'));
         }
 
         async function refreshData() {
@@ -527,6 +591,7 @@
                 const response = await fetch(`${API_BASE}/portfolio`);
                 const data = await response.json();
 
+                // Total portfolio stats
                 document.getElementById('total-value').textContent = `$${data.total_value.toFixed(2)}`;
                 document.getElementById('total-pnl').textContent = `$${data.total_pnl.toFixed(2)}`;
                 document.getElementById('total-pnl').className = data.total_pnl >= 0 ? 'stat-value positive' : 'stat-value negative';
@@ -540,6 +605,26 @@
                 document.getElementById('drawdown').textContent = `${data.drawdown.toFixed(2)}%`;
                 document.getElementById('open-positions').textContent = data.open_positions;
                 document.getElementById('total-trades').textContent = data.total_trades;
+
+                // Long position stats
+                document.getElementById('long-pnl').textContent = `$${data.long_pnl.toFixed(2)}`;
+                document.getElementById('long-pnl').className = data.long_pnl >= 0 ? 'stat-value positive' : 'stat-value negative';
+                document.getElementById('long-realized-pnl').textContent = `Realized: $${data.long_realized_pnl.toFixed(2)}`;
+                document.getElementById('long-unrealized-pnl').textContent = `Unrealized: $${data.long_unrealized_pnl.toFixed(2)}`;
+                document.getElementById('long-unrealized-pnl').style.color = data.long_unrealized_pnl >= 0 ? '#00ba7c' : '#f4212e';
+                document.getElementById('long-pnl-percentage').textContent = `${data.long_pnl_percentage.toFixed(2)}%`;
+                document.getElementById('long-pnl-percentage').className = data.long_pnl_percentage >= 0 ? 'stat-value positive' : 'stat-value negative';
+                document.getElementById('long-drawdown').textContent = `${data.long_drawdown.toFixed(2)}%`;
+
+                // Short position stats
+                document.getElementById('short-pnl').textContent = `$${data.short_pnl.toFixed(2)}`;
+                document.getElementById('short-pnl').className = data.short_pnl >= 0 ? 'stat-value positive' : 'stat-value negative';
+                document.getElementById('short-realized-pnl').textContent = `Realized: $${data.short_realized_pnl.toFixed(2)}`;
+                document.getElementById('short-unrealized-pnl').textContent = `Unrealized: $${data.short_unrealized_pnl.toFixed(2)}`;
+                document.getElementById('short-unrealized-pnl').style.color = data.short_unrealized_pnl >= 0 ? '#00ba7c' : '#f4212e';
+                document.getElementById('short-pnl-percentage').textContent = `${data.short_pnl_percentage.toFixed(2)}%`;
+                document.getElementById('short-pnl-percentage').className = data.short_pnl_percentage >= 0 ? 'stat-value positive' : 'stat-value negative';
+                document.getElementById('short-drawdown').textContent = `${data.short_drawdown.toFixed(2)}%`;
             } catch (error) {
                 console.error('Error loading portfolio:', error);
             }
@@ -547,19 +632,49 @@
 
         async function loadEquityCurve() {
             try {
-                const response = await fetch(`${API_BASE}/equity-curve?limit=100`);
+                // Fetch entire history without limit
+                const response = await fetch(`${API_BASE}/equity-curve?limit=10000`);
                 const data = await response.json();
 
                 if (data.history && data.history.length > 0) {
                     const labels = data.history.map(item => {
                         const date = new Date(item.timestamp);
-                        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        // Show date and time for full history view
+                        return date.toLocaleString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                        });
                     });
+                    
+                    // Total equity curve
                     const values = data.history.map(item => item.total_value);
-
                     equityChart.data.labels = labels;
                     equityChart.data.datasets[0].data = values;
                     equityChart.update('none');
+
+                    // Long positions equity curve (cumulative P&L)
+                    const longValues = data.history.map(item => {
+                        const longPnl = item.long_pnl || 0;
+                        // Start from half of initial portfolio value
+                        const initialValue = data.history[0].total_value / 2;
+                        return initialValue + longPnl;
+                    });
+                    longEquityChart.data.labels = labels;
+                    longEquityChart.data.datasets[0].data = longValues;
+                    longEquityChart.update('none');
+
+                    // Short positions equity curve (cumulative P&L)
+                    const shortValues = data.history.map(item => {
+                        const shortPnl = item.short_pnl || 0;
+                        // Start from half of initial portfolio value
+                        const initialValue = data.history[0].total_value / 2;
+                        return initialValue + shortPnl;
+                    });
+                    shortEquityChart.data.labels = labels;
+                    shortEquityChart.data.datasets[0].data = shortValues;
+                    shortEquityChart.update('none');
                 }
             } catch (error) {
                 console.error('Error loading equity curve:', error);
