@@ -428,7 +428,10 @@
                         <input type="number" class="config-input" id="portfolio-value" placeholder="10000.00">
 
                         <label>Long Leverage (x):</label>
-                        <input type="number" class="config-input" id="long-leverage" placeholder="2.0" step="0.1" min="1.0" max="10.0">
+                        <input type="number" class="config-input" id="long-leverage" placeholder="1.0" step="0.1" min="1.0" max="10.0">
+
+                        <label>Short Leverage (x):</label>
+                        <input type="number" class="config-input" id="short-leverage" placeholder="1.0" step="0.1" min="1.0" max="10.0">
 
                         <button class="btn" onclick="updateConfig()">
                             <i class="fas fa-save"></i> Update Config
@@ -759,6 +762,7 @@
 
                 document.getElementById('portfolio-value').value = data.current_portfolio_value || '';
                 document.getElementById('long-leverage').value = data.long_leverage || '';
+                document.getElementById('short-leverage').value = data.short_leverage || '';
             } catch (error) {
                 console.error('Error loading config:', error);
             }
@@ -767,6 +771,7 @@
         async function updateConfig() {
             const portfolioValue = document.getElementById('portfolio-value').value;
             const longLeverage = document.getElementById('long-leverage').value;
+            const shortLeverage = document.getElementById('short-leverage').value;
 
             try {
                 const response = await fetch(`${API_BASE}/config`, {
@@ -776,7 +781,8 @@
                     },
                     body: JSON.stringify({
                         portfolio_value: portfolioValue ? parseFloat(portfolioValue) : null,
-                        long_leverage: longLeverage ? parseFloat(longLeverage) : null
+                        long_leverage: longLeverage ? parseFloat(longLeverage) : null,
+                        short_leverage: shortLeverage ? parseFloat(shortLeverage) : null
                     })
                 });
 
